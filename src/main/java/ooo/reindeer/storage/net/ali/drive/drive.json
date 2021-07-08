@@ -1,0 +1,29 @@
+{
+  "headers": {
+    "date": "Tue, 29 Jun 2021 05:52:38 GMT",
+    "content-length": "385",
+    "server": "Kaede/3.5.3.488 (bj001xr2j)",
+    "keep-alive": "timeout=25",
+    "x-pds-server-time": "26",
+    "x-ca-request-id": "5ABA5B51-048E-491F-BA7C-D3A03E28E0DE",
+    "connection": "keep-alive",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "creator": "System",
+    "description": "Created by system",
+    "domainId": "bj29",
+    "driveId": "28133360",
+    "driveName": "Default",
+    "driveType": "normal",
+    "encryptDataAccess": false,
+    "encryptMode": "none",
+    "owner": "a7e88f230d9e49c9be6a261e88a2e1df",
+    "ownerType": "user",
+    "relativePath": "",
+    "status": "enabled",
+    "storeId": "b5e9de389ef241d084733b520ea8b57d",
+    "totalSize": 1692217114624,
+    "usedSize": 17716127
+  }
+}
