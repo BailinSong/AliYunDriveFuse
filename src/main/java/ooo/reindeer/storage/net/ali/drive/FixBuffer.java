@@ -1,5 +1,6 @@
 package ooo.reindeer.storage.net.ali.drive;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Flushable;
 import java.io.IOException;
 import java.util.Arrays;
@@ -12,14 +13,33 @@ import java.util.Spliterator;
  * @Version 1.0
  * @Description TODO
  */
-public abstract class FixBuffer implements Flushable {
-    byte[] raw;
-    int writeIndex=0;
+public class FixBuffer implements Flushable {
+    volatile byte[] raw;
+    volatile int writeIndex=0;
     int maxSize;
-    int flushNum =0;
+    volatile int flushNum =0;
+
+    volatile int cacheOff=0;
     public FixBuffer(int size) {
         this.raw = new byte[size];
         maxSize=size;
+    }
+
+    public synchronized byte[] read(int size,int offset,int len){
+
+        //在缓存范围内
+        if ( !(cacheOff<offset&&writeIndex+cacheOff>offset+len)) {
+            ByteArrayOutputStream byteArrayOutputStream=new ByteArrayOutputStream(maxSize);
+            load(byteArrayOutputStream,size,offset,maxSize);
+            raw=byteArrayOutputStream.toByteArray();
+            writeIndex=raw.length-1;
+            cacheOff=offset;
+        }
+
+        byte[] part=new byte[len];
+        System.arraycopy(raw,offset-cacheOff,part,0,len);
+        return part;
+
     }
 
     @Override
@@ -43,7 +63,11 @@ public abstract class FixBuffer implements Flushable {
 
     }
 
-    public abstract void flush(byte[] data,int flushNum);
+    public void flush(byte[] data, int flushNum) {
+
+    }
+
+    public void load(ByteArrayOutputStream buff, int size, int offset,int len){}
 
 
     public static void main(String[] args) throws IOException {
@@ -52,6 +76,8 @@ public abstract class FixBuffer implements Flushable {
             public void flush(byte[] data, int flushNum) {
                 System.out.println("FixBuffer.flush( "+"data = [" + Arrays.toString(data) + "] flushNum = [" + flushNum + "]"+" )");
             }
+
+
         };
 
         byte[] bytes =new byte[]{1,2,3,4,5,6,7,8,9,10};

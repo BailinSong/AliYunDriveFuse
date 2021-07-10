@@ -191,7 +191,7 @@ public class DriveClient extends Client {
 
 
     public byte[] downloadPart(String driveId, String fileId, int size, int offset, int length) throws Exception {
-        System.out.println("DriveClient.download( " + "driveId = [" + driveId + "], fileId = [" + fileId + "], size = [" + size + "], offset = [" + offset + "], length = [" + length + "]" + " )");
+//        System.out.println("DriveClient.download( " + "driveId = [" + driveId + "], fileId = [" + fileId + "], size = [" + size + "], offset = [" + offset + "], length = [" + length + "]" + " )");
 
 
         RuntimeOptions runtime = new RuntimeOptions();
@@ -225,13 +225,16 @@ public class DriveClient extends Client {
 //xxx表示你已下载的文件大小
                 httpConnection.setRequestProperty("authorization", "Bearer " + accessToken + "");
                 httpConnection.setRequestProperty("Referer", "https://www.aliyundrive.com/");
-                httpConnection.setRequestProperty("RANGE", "bytes=" + offset + "-" + (((offset + length) == size) ? "" : (offset + length)));
+                httpConnection.setRequestProperty("RANGE", "bytes=" + offset + "-" + (((offset + length) >= size) ? "" : (offset + length)));
 //                System.out.println(httpConnection+" RANGE:bytes=" + offset + "-"+(((offset+length)==size)?"":(offset+length)));
                 byte[] buff = new byte[length];
+
+
 
                 if (httpConnection.getResponseCode() == 206 || httpConnection.getResponseCode() == 200) {
                     int buffOffset = 0;
                     int readLength = -1;
+                    int realSize=httpConnection.getContentLength();
                     try (InputStream input = httpConnection.getInputStream()) {
                         do {
 
@@ -239,7 +242,7 @@ public class DriveClient extends Client {
 //                            System.out.println("buffOffset = " + buffOffset+" readLength="+readLength);
                             buffOffset += readLength;
 
-                        } while (length != buffOffset);
+                        } while (realSize != buffOffset+1);
                     }
 //                    System.out.println("DriveClient.download( "+"driveId = [" + driveId + "], fileId = [" + fileId + "], size = [" + size + "], offset = [" + offset + "], length = [" + length + "]"+" )"+new String(buff));
 
