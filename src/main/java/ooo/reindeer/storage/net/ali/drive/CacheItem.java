@@ -11,21 +11,21 @@ public class CacheItem<T> {
     T value;
     long timeout;
 
-    public T getValue() {
-        return value;
-    }
-
-    public CacheItem<T> setValue(T value) {
-        this.value = value;
-        return this;
-    }
-
     public long getTimeout() {
         return timeout;
     }
 
     public CacheItem<T> setTimeout(long timeout) {
         this.timeout = timeout;
+        return this;
+    }
+
+    public T getValue() {
+        return value;
+    }
+
+    public CacheItem<T> setValue(T value) {
+        this.value = value;
         return this;
     }
 }

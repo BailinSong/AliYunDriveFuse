@@ -32,7 +32,7 @@ public class PDSClient extends Client {
         request_.protocol = "https";
         request_.method = "POST";
         request_.pathname = "/token/refresh";
-        request_.headers = TeaConverter.merge(String.class, new Map[]{TeaConverter.buildMap(new TeaPair("host", Common.defaultString("", "websv.aliyundrive.com")), new TeaPair("content-type", "application/json; charset=utf-8"))});
+        request_.headers = TeaConverter.merge(String.class, TeaConverter.buildMap(new TeaPair("host", Common.defaultString("", "websv.aliyundrive.com")), new TeaPair("content-type", "application/json; charset=utf-8")));
 
 
         Map<String, Object> realReq = new HashMap<>();
@@ -47,7 +47,7 @@ public class PDSClient extends Client {
 
         request_.body = Tea.toReadable(Common.toJSONString(realReq));
         RuntimeOptions runtime = new RuntimeOptions();
-        Map<String, Object> runtime_ = TeaConverter.buildMap(new TeaPair[]{new TeaPair("timeouted", "retry"), new TeaPair("readTimeout", runtime.readTimeout), new TeaPair("connectTimeout", runtime.connectTimeout), new TeaPair("localAddr", runtime.localAddr), new TeaPair("httpProxy", runtime.httpProxy), new TeaPair("httpsProxy", runtime.httpsProxy), new TeaPair("noProxy", runtime.noProxy), new TeaPair("maxIdleConns", runtime.maxIdleConns), new TeaPair("socks5Proxy", runtime.socks5Proxy), new TeaPair("socks5NetWork", runtime.socks5NetWork), new TeaPair("retry", TeaConverter.buildMap(new TeaPair[]{new TeaPair("retryable", runtime.autoretry), new TeaPair("maxAttempts", Common.defaultNumber(runtime.maxAttempts, 3))})), new TeaPair("backoff", TeaConverter.buildMap(new TeaPair[]{new TeaPair("policy", Common.defaultString(runtime.backoffPolicy, "no")), new TeaPair("period", Common.defaultNumber(runtime.backoffPeriod, 1))})), new TeaPair("ignoreSSL", runtime.ignoreSSL)});
+        Map<String, Object> runtime_ = TeaConverter.buildMap(new TeaPair("timeouted", "retry"), new TeaPair("readTimeout", runtime.readTimeout), new TeaPair("connectTimeout", runtime.connectTimeout), new TeaPair("localAddr", runtime.localAddr), new TeaPair("httpProxy", runtime.httpProxy), new TeaPair("httpsProxy", runtime.httpsProxy), new TeaPair("noProxy", runtime.noProxy), new TeaPair("maxIdleConns", runtime.maxIdleConns), new TeaPair("socks5Proxy", runtime.socks5Proxy), new TeaPair("socks5NetWork", runtime.socks5NetWork), new TeaPair("retry", TeaConverter.buildMap(new TeaPair("retryable", runtime.autoretry), new TeaPair("maxAttempts", Common.defaultNumber(runtime.maxAttempts, 3)))), new TeaPair("backoff", TeaConverter.buildMap(new TeaPair("policy", Common.defaultString(runtime.backoffPolicy, "no")), new TeaPair("period", Common.defaultNumber(runtime.backoffPeriod, 1)))), new TeaPair("ignoreSSL", runtime.ignoreSSL));
 
         TeaResponse response_ = Tea.doAction(request_, runtime_);
         Map<String, Object> respMap = null;
@@ -56,7 +56,7 @@ public class PDSClient extends Client {
             if (Common.equalNumber(response_.statusCode, 200)) {
                 obj = Common.readAsJSON(response_.body);
                 respMap = Common.assertAsMap(obj);
-                AccountTokenModel accountTokenModel = (AccountTokenModel) TeaModel.toModel(TeaConverter.buildMap(new TeaPair[]{new TeaPair("body", respMap), new TeaPair("headers", response_.headers)}), new AccountTokenModel());
+                AccountTokenModel accountTokenModel = TeaModel.toModel(TeaConverter.buildMap(new TeaPair("body", respMap), new TeaPair("headers", response_.headers)), new AccountTokenModel());
 
                 this.setAccessToken(accountTokenModel.getBody().getAccessToken());
 

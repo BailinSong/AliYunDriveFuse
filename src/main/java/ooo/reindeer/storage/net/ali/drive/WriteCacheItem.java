@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class WriteCacheItem {
     byte[] data;
-    AtomicInteger partNum=new AtomicInteger(0);
+    AtomicInteger partNum = new AtomicInteger(0);
 
     public byte[] getData() {
         return data;
