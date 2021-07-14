@@ -42,7 +42,7 @@ import static java.time.format.DateTimeFormatter.ISO_DATE_TIME;
  * @Version 1.0
  * @Description TODO
  */
-public class AliyunDriveFSv2 extends FuseStubFS {
+public class AliyunDriveFS extends FuseStubFS {
 
 
     public static final String S_AVAILABLE = "available";
@@ -50,22 +50,22 @@ public class AliyunDriveFSv2 extends FuseStubFS {
     public static final String T_SYMLINK = "symlink";
     public static final String T_FILE = "file";
     public static final String T_FOLDER = "folder";
-    static List<String> exclude = Arrays.asList(new String[]{
-//            "._"
-//            ".DS_Store"
-//            ,".hidden"
-    });
+    static List<String> exclude = Arrays.asList("._"
+            , ".DS_Store"
+            , ".hidden");
+
+
     private final DriveClient driveClient;
-    Logger logger = LoggerFactory.getLogger(AliyunDriveFSv2.class);
+    Logger logger = LoggerFactory.getLogger(AliyunDriveFS.class);
     Config config = new Config();
     Path tempDir = Files.createTempDirectory("AliyunDriverFS");
     int uploadPartSize = 5 * 1024 * 1024;
     int readPartSize = 5 * 1024 * 1024;
-    Map<String, CacheItem<GetFileByPathResponse>> cache = new ConcurrentHashMap<>();
+    //    Map<String, CacheItem<GetFileByPathResponse>> cache = new ConcurrentHashMap<>();
     Map<String, byte[]> frist4kCache = new ConcurrentHashMap<>();
     Map<Object, FixBuffer> writeCache = new ConcurrentHashMap<>();
     Map<Object, FixBuffer> readCache = new ConcurrentHashMap<>();
-    GetFileByPathResponse rootFile = new GetFileByPathResponse();
+    FileRef rootFile = new FileRef();
     CacheItem<GetFileByPathResponse> DEFAULT_CACHE_ITEM = new CacheItem<GetFileByPathResponse>().setTimeout(-1);
     long lastUpdateStatFS = 0;
     long totalSize = 0;
@@ -74,10 +74,11 @@ public class AliyunDriveFSv2 extends FuseStubFS {
     AtomicLong fh = new AtomicLong(0);
     ObjectMapper objectMapper = new ObjectMapper();
 
-    public AliyunDriveFSv2(String rt) throws Exception {
+    public AliyunDriveFS(String rt) throws Exception {
 
         config.protocol = "https";
         config.refreshToken = rt;
+
         driveClient = new DriveClient(config);
         AccountTokenRequest tokenRequest = new AccountTokenRequest();
         tokenRequest.setRefreshToken(config.refreshToken);
@@ -89,21 +90,23 @@ public class AliyunDriveFSv2 extends FuseStubFS {
         userRequest.setUserId(tokenResponse.getBody().getUserId());
         GetUserModel getUserModel = driveClient.getUser(userRequest);
         driveClient.setDriveId(tokenResponse.body.getDefaultDriveId());
-        rootFile.setType("folder");
-        rootFile.setName("root");
-        rootFile.setFileId("root");
-        rootFile.setStatus("available");
-        rootFile.setDriveId(tokenResponse.body.getDefaultDriveId());
-        rootFile.setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.ofEpochSecond(getUserModel.body.getCreatedAt() / 1000, 0, ZoneOffset.UTC)));
-        rootFile.setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.ofEpochSecond(getUserModel.body.getUpdatedAt() / 1000, 0, ZoneOffset.UTC)));
+
+        rootFile.setSelf(new GetFileByPathResponse()).getSelf()
+                .setType("folder")
+                .setName("root")
+                .setFileId("root")
+                .setStatus("available")
+                .setDriveId(tokenResponse.body.getDefaultDriveId())
+                .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.ofEpochSecond(getUserModel.body.getCreatedAt() / 1000, 0, ZoneOffset.UTC)))
+                .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.ofEpochSecond(getUserModel.body.getUpdatedAt() / 1000, 0, ZoneOffset.UTC)));
     }
 
     @Override
-    public int create(String path, @mode_t long mode, FuseFileInfo fi) {
+    public synchronized int create(String path, @mode_t long mode, FuseFileInfo fi) {
         fi.fh.set(fh.incrementAndGet() % 999999999999999999L);
 
 
-        if (getPath(path) != null) {
+        if (getPath(path, true) != null) {
             System.out.println("AliyunDriveFSv2.create[" + fi.fh.get() + "]( " + "path = [" + path + "], mode = [" + mode + "]" + " ) EEXIST");
             return -ErrorCodes.EEXIST();
         } else {
@@ -117,7 +120,7 @@ public class AliyunDriveFSv2 extends FuseStubFS {
         if (!parent.getType().equalsIgnoreCase("file")) {
             String lastComponent = getLastComponent(path);
 
-            if (lastComponent.startsWith("._") || getLastComponent(path).startsWith(".fuse_hidden")) {
+            if (isExclude(lastComponent)) {
 
                 GetFileByPathResponse file = new GetFileByPathResponse();
 
@@ -128,9 +131,10 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                         .setStatus(null)
                         .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
                         .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
-                        .setType("file");
-                frist4kCache.getOrDefault(file.getFileId(), new byte[0]);
-                putCache(path, file);
+                        .setType("file")
+                        .setCategory("L");
+                frist4kCache.getOrDefault(path, new byte[0]);
+                rootFile.put(path, file);
                 return 0;
             }
 
@@ -154,8 +158,9 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                         .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
                         .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
                         .setType(reponse.getBody().getType())
-                        .setUploadId(reponse.getBody().uploadId);
-                putCache(path, file);
+                        .setUploadId(reponse.getBody().uploadId)
+                        .setCategory("L");
+                rootFile.put(path, file);
 //                writeCache.put(reponse.getBody().getFileId(), new byte[uploadPartSize]);
 
             } catch (Exception e) {
@@ -167,8 +172,8 @@ public class AliyunDriveFSv2 extends FuseStubFS {
     }
 
     public GetFileByPathResponse find(String path) {
-
-        if (getLastComponent(path).startsWith("._") || getLastComponent(path).startsWith(".fuse_hidden")) {
+        String lastComponent = getLastComponent(path);
+        if (isExclude(lastComponent)) {
             return null;
         }
 
@@ -178,7 +183,7 @@ public class AliyunDriveFSv2 extends FuseStubFS {
         }
         if (tempPath.isEmpty()) {
             try {
-                return rootFile;
+                return rootFile.getSelf();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -235,27 +240,35 @@ public class AliyunDriveFSv2 extends FuseStubFS {
     }
 
     private GetFileByPathResponse getParentPath(String path, String... status) {
-        return getPath(getParentComponent(path), status);
+        return getPath(getParentComponent(path), false, status);
     }
 
     private GetFileByPathResponse getPath(String path, String... status) {
+        return getPath(path, false, status);
+    }
+
+    private GetFileByPathResponse getPath(String path, boolean remote, String... status) {
 
         if (isExclude(path)) {
             return null;
         }
 
         GetFileByPathResponse value;
-        CacheItem<GetFileByPathResponse> item = cache.getOrDefault(path, DEFAULT_CACHE_ITEM);
+        FileRef file = rootFile.find(path);
+        GetFileByPathResponse item = (file == null) ? null : file.getSelf();
 
 
-        if (item.getTimeout() != -1 && Objects.nonNull(item.value)) {
-            value = item.getValue();
+        if (Objects.nonNull(file)) {
+            value = item;
         } else {
+            if (!remote) {
+                return null;
+            }
             value = find(path);
             if (Objects.nonNull(value)) {
-                putCache(path, value);
+                rootFile.put(path, value);
             } else {
-                value = item.getValue();
+                value = item;
             }
         }
 
@@ -287,6 +300,12 @@ public class AliyunDriveFSv2 extends FuseStubFS {
         return getPath(path, S_AVAILABLE);
     }
 
+    private GetFileByPathResponse getPath(String path, boolean remote) {
+
+
+        return getPath(path, remote, S_AVAILABLE);
+    }
+
     @Override
     public int getattr(String path, FileStat stat) {
 
@@ -307,12 +326,16 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                             stat.st_mode.set(FileStat.S_IFREG | 0777);
                         }
                         stat.st_size.set(file.getSize());
+                        stat.st_blocks.set(file.getSize() / BLOCK_SIZE + 1);
+//                        stat.st_blksize.set(64*1024);
+
                 }
 
                 stat.st_birthtime.tv_sec.set(LocalDateTime.parse(file.getCreatedAt(), ISO_DATE_TIME).toEpochSecond(ZoneOffset.of("+0")));
                 stat.st_mtim.tv_sec.set(LocalDateTime.parse(file.getUpdatedAt(), ISO_DATE_TIME).toEpochSecond(ZoneOffset.of("+0")));
                 stat.st_uid.set(getContext().uid.get());
                 stat.st_gid.set(getContext().gid.get());
+
                 return 0;
             }
         } catch (Exception e) {
@@ -365,12 +388,12 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                     .setDriveId(reponse.getBody().getDriveId())
                     .setDomainId(reponse.getBody().getDomainId())
                     .setSize(0L)
-                    .setStatus(null)
                     .setStatus(reponse.getBody().getStatus())
                     .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
                     .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
-                    .setType(reponse.getBody().getType());
-            putCache(path, file);
+                    .setType(reponse.getBody().getType())
+                    .setCategory("L");
+            rootFile.put(path, file);
 
             return 0;
         } catch (Exception e) {
@@ -393,19 +416,9 @@ public class AliyunDriveFSv2 extends FuseStubFS {
         return 0;
     }
 
-    private void putCache(String path, GetFileByPathResponse file) {
-        if (isExclude(path)) {
-            return;
-        }
-//            System.out.println("AliyunDriveFSv2.putCache( " + "createDir = [" + createDir + "], file = [" + file + "]" + " )");
-//            new Throwable().printStackTrace(System.out);
-
-        cache.put(path, new CacheItem<GetFileByPathResponse>().setValue(file).setTimeout(System.currentTimeMillis()));
-    }
-
     @Override
     public int read(String path, Pointer buf, @size_t long size, @off_t long offset, FuseFileInfo fi) {
-//        System.out.println("AliyunDriveFS.read[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " )");
+        System.out.println("AliyunDriveFS.read[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " )");
         int bytesToRead = 0;
         try {
             GetFileByPathResponse file = getPath(path, S_AVAILABLE);
@@ -418,9 +431,15 @@ public class AliyunDriveFSv2 extends FuseStubFS {
             }
 
             bytesToRead = (int) Math.min(file.size - offset, size);
+            String lastComponent = getLastComponent(path);
+            if (isExclude(lastComponent)) {
 
-            if (getLastComponent(path).startsWith("._") || getLastComponent(path).startsWith(".fuse_hidden")) {
-                buf.put(0, frist4kCache.get(file.getFileId()), 0, bytesToRead);
+
+                if (frist4kCache.get(path) == null) {
+                    buf.put(0, new byte[bytesToRead], 0, bytesToRead);
+                } else {
+                    buf.put(0, frist4kCache.get(path), 0, bytesToRead);
+                }
                 return bytesToRead;
             }
 
@@ -428,6 +447,11 @@ public class AliyunDriveFSv2 extends FuseStubFS {
             byte[] bytes = null;
 
 
+            if (bytesToRead <= 4 * 1024 && offset == 0 && readCache.get(fi.fh.get()) == null) {
+                bytes = driveClient.downloadPart(file.driveId, file.fileId, file.getSize().longValue(), (int) offset, bytesToRead);
+                buf.put(0, bytes, 0, bytesToRead);
+                return bytesToRead;
+            }
 //            if (size <= 4 * 1024 && offset == 0) {
 //                bytes = frist4kCache.get(file.getFileId());
 //            }
@@ -446,7 +470,7 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                 }
             });
             readCache.put(fi.fh.get(), fixBuffer);
-            bytes = fixBuffer.read(file.getSize().intValue(), (int) offset, bytesToRead);
+            bytes = fixBuffer.read(file.getSize().longValue(), (int) offset, bytesToRead);
 //            }
 
 
@@ -462,25 +486,33 @@ public class AliyunDriveFSv2 extends FuseStubFS {
     public int readdir(String path, Pointer buf, FuseFillDir filter, @off_t long offset, FuseFileInfo fi) {
 //        System.out.println("AliyunDriveFSv2.readdir( " + "path = [" + path + "], buf = [" + buf + "], filter = [" + filter + "], offset = [" + offset + "]" + " )");
 
+
         try {
-            GetFileByPathResponse file = getPath(path, S_AVAILABLE, null);
+            FileRef file = rootFile.find(path);
 //            file =(file==null)?getPath(path,null):file;
-            if (file == null) {
+            if (file == null || file.getSelf() == null) {
                 return -ErrorCodes.ENOENT();
             }
-            if (file.getType().equalsIgnoreCase("file")) {
+            if (file.getSelf().getType().equalsIgnoreCase("file")) {
                 return -ErrorCodes.ENOTDIR();
             }
 
             filter.apply(buf, ".", null, 0);
             filter.apply(buf, "..", null, 0);
 
+            file.getChildren().forEach((s, fileRef) -> {
+                if (fileRef.getSelf().getCategory() == null && fileRef.getSelf().getType().equals(T_FILE)) {
+                    file.getChildren().remove(fileRef.getSelf().getName());
+                }
+            });
+
             String marker = "";
+            List<String> remoteNames = new ArrayList<>();
             do {
                 ListFileRequest listFileRequest = new ListFileRequest();
-                listFileRequest.setDriveId(file.getDriveId());
+                listFileRequest.setDriveId(file.getSelf().getDriveId());
                 listFileRequest.setMarker(marker);
-                listFileRequest.setParentFileId(file.getFileId());
+                listFileRequest.setParentFileId(file.getSelf().getFileId());
 
                 ListFileModel listFileResponse = null;
 
@@ -489,17 +521,56 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                 for (BaseCCPFileResponse item : listFileResponse.getBody().getItems()) {
 
                     System.out.println("objectMapper.writeValueAsString(item) = " + objectMapper.writeValueAsString(item));
+                    remoteNames.add(item.getName());
 
-//                    System.out.println("item.getName() = " + item.getName());
-                    FileStat fileStat = new FileStat(Runtime.getSystemRuntime());
-                    getattr(path, fileStat);
-                    if (item.getType().equalsIgnoreCase("file")) {
-                        filter.apply(buf, item.getName(), fileStat, 0);
+                    FileRef newFile = new FileRef();
+                    FileRef original = file.getChildren().get(item.getName());
+                    newFile.setSelf(new GetFileByPathResponse()).getSelf()
+                            .setStatus(item.getStatus())
+                            .setType(item.getType())
+                            .setName(item.getName())
+                            .setFileId(item.getFileId())
+                            .setParentFileId(item.getParentFileId())
+                            .setCreatedAt(item.getCreatedAt())
+                            .setUpdatedAt(item.getUpdatedAt())
+                            .setLabels(item.getLabels())
+                            .setSize(item.size)
+                            .setDriveId(item.getDriveId())
+                            .setDomainId(item.getDomainId())
+                            .setCategory(null);
+
+
+                    if (original != null) {
+                        original.setSelf(newFile.getSelf());
                     } else {
-                        filter.apply(buf, item.getName(), fileStat, 0);
+                        file.getChildren().put(item.getName(), newFile);
                     }
                 }
+
+
             } while (!marker.isEmpty());
+
+            file.getChildren().forEach((s, fileRef) -> {
+
+                if ((!remoteNames.contains(s)) && fileRef.getSelf().getCategory() == null) {
+                    file.getChildren().remove(s);
+                }
+
+            });
+
+
+            file.getChildren().forEach((s, fileRef) -> {
+                System.out.println("item.getName() = " + s + " stat = " + fileRef.getSelf().getStatus() + " category = " + fileRef.getSelf().getCategory());
+                FileStat fileStat = new FileStat(Runtime.getSystemRuntime());
+                getattr(path, fileStat);
+                if (fileRef.self.getType().equalsIgnoreCase(T_FILE)) {
+                    filter.apply(buf, s, fileStat, 0);
+                } else {
+                    filter.apply(buf, s, fileStat, 0);
+                }
+            });
+
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -532,7 +603,8 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                 return 0;
             }
 
-            if (getLastComponent(path).startsWith("._") || getLastComponent(path).startsWith(".fuse_hidden")) {
+            String lastComponent = getLastComponent(path);
+            if (isExclude(lastComponent)) {
 
                 fileInfo.setStatus(S_AVAILABLE);
                 return 0;
@@ -544,26 +616,19 @@ public class AliyunDriveFSv2 extends FuseStubFS {
             if (buffer != null) {
                 buffer.flush();
 
-//            AtomicInteger partNum = new AtomicInteger();
-//            if (fileInfo != null && tempDir.resolve(fileInfo.fileId).toFile().exists()) {
-//                try (RandomAccessFile file = new RandomAccessFile(tempDir.resolve(fileInfo.fileId).toFile(), "r")) {
-//
-//                    byte[] tempDate = new byte[uploadPartSize];
-//                    int len = -1;
-//                    while ((len = file.read(tempDate)) != -1) {
-//                        upload(fileInfo.getFileId(), fileInfo.getUploadId(), partNum.incrementAndGet(), tempDate, len);
-//                    }
-//                }
-
-                CompleteFileRequest CompleteFileRequest = new CompleteFileRequest();
-                CompleteFileRequest.driveId = fileInfo.getDriveId();
-                CompleteFileRequest.fileId = fileInfo.fileId;
-                CompleteFileRequest.uploadId = fileInfo.uploadId;
-                CompleteFileModel CompleteFileResponse = driveClient.completeFile(CompleteFileRequest);
-                fileInfo.setStatus(S_AVAILABLE);
-//                setUpdateCache(path);
-
             }
+            /*else{
+                upload(fileInfo.getFileId(), fileInfo.getUploadId(), 1, new byte[0], 0);
+            }*/
+
+            CompleteFileRequest CompleteFileRequest = new CompleteFileRequest();
+            CompleteFileRequest.driveId = fileInfo.getDriveId();
+            CompleteFileRequest.fileId = fileInfo.fileId;
+            CompleteFileRequest.uploadId = fileInfo.uploadId;
+            CompleteFileModel CompleteFileResponse = driveClient.completeFile(CompleteFileRequest);
+            fileInfo.setStatus(S_AVAILABLE);
+
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -588,11 +653,12 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                 return -ErrorCodes.ENOENT();
             }
 
-//            if (getLastComponent(newName).startsWith(".fuse_hidden")) {
-//                cache.put(newName, cache.remove(path));
-//                //bug 源文件没有被删除
-//                return 0;
-//            }
+            String lastComponent = getLastComponent(path);
+            if (p.getStatus() == null || isExclude(lastComponent)) {
+
+                rootFile.put(newName, rootFile.remove(path).self.setName(getLastComponent(newName)));
+                return 0;
+            }
 
             String name = getLastComponent(newName);
             MoveFileRequest request = new MoveFileRequest();
@@ -604,8 +670,7 @@ public class AliyunDriveFSv2 extends FuseStubFS {
 
 
             MoveFileModel fileResponse = driveClient.moveFile(request);
-//            setUpdateCache(path);
-            cache.remove(path);
+            rootFile.remove(path);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -618,17 +683,6 @@ public class AliyunDriveFSv2 extends FuseStubFS {
         return unlink(path);
     }
 
-    private void setUpdateCache(String path) {
-        if (isExclude(path)) {
-            return;
-        }
-//            System.out.println("AliyunDriveFSv2.putCache( " + "createDir = [" + createDir + "], file = [" + file + "]" + " )");
-//            new Throwable().printStackTrace(System.out);
-        CacheItem<GetFileByPathResponse> item = cache.get(path);
-        if (item != null) {
-            item.setTimeout(-1);
-        }
-    }
 
     @Override
     public int statfs(String path, Statvfs stbuf) {
@@ -646,9 +700,6 @@ public class AliyunDriveFSv2 extends FuseStubFS {
 
 
                     GetDriveModel getDriveModel = driveClient.getDrive(getDriveRequest);
-//                    stbuf.f_blocks.set(1024 * 1024); // total data blocks in file system
-//                    stbuf.f_frsize.set(1024);        // fs block size
-//                    stbuf.f_bfree.set(1024 * 1024);  // free blocks in fs
 
 
                     totalSize = getDriveModel.getBody().getTotalSize() / BLOCK_SIZE;
@@ -657,7 +708,6 @@ public class AliyunDriveFSv2 extends FuseStubFS {
 
                 stbuf.f_blocks.set(totalSize); // total data blocks in file system
 
-//                stbuf.f_frsize.set(blockSize);        // fs block size
                 stbuf.f_bsize.set(BLOCK_SIZE);
 
                 stbuf.f_bfree.set(freeSize);  // free blocks in fs
@@ -705,8 +755,9 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                     .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
                     .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
                     .setType(reponse.getBody().getType())
-                    .setUploadId(reponse.getBody().uploadId);
-            putCache(newpath, file);
+                    .setUploadId(reponse.getBody().uploadId)
+                    .setCategory("L");
+            rootFile.put(newpath, file);
 
 
             upload(reponse.getBody().getFileId(), reponse.getBody().getUploadId(), 1, data, data.length);
@@ -716,7 +767,7 @@ public class AliyunDriveFSv2 extends FuseStubFS {
             CompleteFileRequest.fileId = reponse.getBody().getFileId();
             CompleteFileRequest.uploadId = reponse.getBody().getUploadId();
             CompleteFileModel CompleteFileResponse = driveClient.completeFile(CompleteFileRequest);
-            setUpdateCache(newpath);
+            file.setStatus(S_AVAILABLE);
             return 0;
         } catch (Exception e) {
             e.printStackTrace();
@@ -725,92 +776,104 @@ public class AliyunDriveFSv2 extends FuseStubFS {
     }
 
     @Override
-    public int truncate(String path, long offset) {
-        System.out.println("AliyunDriveFSv2.truncate( " + "path = [" + path + "], offset = [" + offset + "]" + " )");
-
-        if (getPath(path, S_AVAILABLE, null) == null) {
-            return -ErrorCodes.ENOENT();
-        } else {
-//            unlink(path);
-        }
-
-        GetFileByPathResponse parent = getParentPath(path, S_AVAILABLE, null);
-
-
-        if (!parent.getType().equalsIgnoreCase("file")) {
-            String lastComponent = getLastComponent(path);
-
-            if (lastComponent.startsWith("._") || getLastComponent(path).startsWith(".fuse_hidden")) {
-                frist4kCache.getOrDefault(path, new byte[4096]);
-                GetFileByPathResponse file = new GetFileByPathResponse();
-
-                file
-                        .setName(getLastComponent(lastComponent))
-                        .setFileId(UUID.randomUUID().toString())
-                        .setSize(4096L)
-                        .setStatus(S_AVAILABLE)
-                        .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
-                        .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
-                        .setType("file");
-                putCache(file.getFileId(), file);
+    public synchronized int truncate(String path, long offset) {
+        try {
+            System.out.println("AliyunDriveFSv2.truncate( " + "path = [" + path + "], offset = [" + offset + "]" + " )");
+            GetFileByPathResponse target = getPath(path, S_AVAILABLE, null);
+            if (target == null) {
+                return -ErrorCodes.ENOENT();
             } else {
-                try {
-                    CreateFileRequest createFileRequest = new CreateFileRequest();
-                    createFileRequest.setType("file");
-                    createFileRequest.setDriveId(driveClient.driveId);
-                    createFileRequest.setName(lastComponent);
-                    createFileRequest.setParentFileId(parent.getFileId());
-                    CreateFileModel reponse = driveClient.createFile(createFileRequest);
+                if (S_AVAILABLE.equals(target.getStatus())) {
+                    String newName = path + ".bak-" + System.currentTimeMillis();
+                    rename(path, path + ".bak-" + System.currentTimeMillis());
+                    unlink(newName);
+                }
+            }
+
+            GetFileByPathResponse parent = getParentPath(path, S_AVAILABLE, null);
+
+
+            if (!parent.getType().equalsIgnoreCase("file")) {
+                String lastComponent = getLastComponent(path);
+
+                if (isExclude(lastComponent)) {
+                    frist4kCache.getOrDefault(path, new byte[4096]);
                     GetFileByPathResponse file = new GetFileByPathResponse();
 
                     file
-                            .setName(getLastComponent(lastComponent))
-                            .setFileId(reponse.getBody().getFileId())
-                            .setParentFileId(reponse.getBody().getParentFileId())
-                            .setDriveId(reponse.getBody().getDriveId())
-                            .setDomainId(reponse.getBody().getDomainId())
-                            .setSize(0L)
-                            .setStatus(reponse.getBody().getStatus())
+                            .setName(lastComponent)
+                            .setFileId(UUID.randomUUID().toString())
+                            .setSize(4096L)
+                            .setStatus(S_AVAILABLE)
                             .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
                             .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
-                            .setType(reponse.getBody().getType())
-                            .setUploadId(reponse.getBody().uploadId);
-                    putCache(path, file);
+                            .setType("file")
+                            .setCategory("L");
+                    rootFile.put(path, file);
+                } else {
+                    try {
+                        CreateFileRequest createFileRequest = new CreateFileRequest();
+                        createFileRequest.setType("file");
+                        createFileRequest.setDriveId(driveClient.driveId);
+                        createFileRequest.setName(lastComponent);
+                        createFileRequest.setParentFileId(parent.getFileId());
+                        CreateFileModel reponse = driveClient.createFile(createFileRequest);
+                        GetFileByPathResponse file = new GetFileByPathResponse();
 
-                } catch (Exception e) {
-                    e.printStackTrace();
+                        file
+                                .setName(getLastComponent(lastComponent))
+                                .setFileId(reponse.getBody().getFileId())
+                                .setParentFileId(reponse.getBody().getParentFileId())
+                                .setDriveId(reponse.getBody().getDriveId())
+                                .setDomainId(reponse.getBody().getDomainId())
+                                .setSize(0L)
+                                .setStatus(reponse.getBody().getStatus())
+                                .setCreatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
+                                .setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()))
+                                .setType(reponse.getBody().getType())
+                                .setUploadId(reponse.getBody().uploadId)
+                                .setCategory("L");
+                        rootFile.put(path, file);
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
+                return 0;
             }
-            return 0;
+        } catch (Throwable t) {
+            t.printStackTrace();
         }
         return -ErrorCodes.ENOENT();
     }
 
     @Override
-    public int unlink(String path) {
+    public synchronized int unlink(String path) {
         try {
             System.out.println("AliyunDriveFS.unlink( " + "path = [" + path + "]" + " )");
 
-            GetFileByPathResponse file = getPath(path, S_AVAILABLE, null);
+            GetFileByPathResponse file = getPath(path, true, S_AVAILABLE, null);
 
-            if (getLastComponent(path).startsWith("._") || getLastComponent(path).startsWith(".fuse_hidden")) {
-                cache.remove(path);
-                frist4kCache.remove(file.getFileId());
-                return 0;
+            if (file != null) {
+                String lastComponent = getLastComponent(path);
+                if (isExclude(lastComponent)) {
+                    rootFile.remove(path);
+                    frist4kCache.remove(path);
+                    return 0;
+                }
+
+
+                DeleteFileRequest deleteFileRequest = new DeleteFileRequest();
+                deleteFileRequest.setDriveId(file.driveId);
+                deleteFileRequest.setFileId(file.fileId);
+                DeleteFileModel response = null;
+
+                response = driveClient.deleteFile(deleteFileRequest);
+                rootFile.remove(path);
+                frist4kCache.remove(path);
             }
-
-
-//            file = (file==null)?getPath(path,null):file;
-            DeleteFileRequest deleteFileRequest = new DeleteFileRequest();
-            deleteFileRequest.setDriveId(file.driveId);
-            deleteFileRequest.setFileId(file.fileId);
-            DeleteFileModel response = null;
-
-            response = driveClient.deleteFile(deleteFileRequest);
-            cache.remove(path);
-            frist4kCache.remove(file.getFileId());
         } catch (Exception e) {
-            e.printStackTrace();
+            new RuntimeException(path, e).printStackTrace();
         }
         return 0;
     }
@@ -830,7 +893,7 @@ public class AliyunDriveFSv2 extends FuseStubFS {
 
             Response response = driveClient.uploadFileParh(uploadUrl, bytesToWrite, 0, len);
 
-//            System.out.println("AliyunDriveFSv2.upload( " + "fileid = [" + fileid + "], uploadId = [" + uploadId + "], partNum = [" + partNum + "], bytesToWrite = [" + bytesToWrite + "], len = [" + len + "], response = [" + response.message() + "]" + " )");
+            System.out.println("AliyunDriveFSv2.upload( " + "fileid = [" + fileid + "], uploadId = [" + uploadId + "], partNum = [" + partNum + "], bytesToWrite = [" + bytesToWrite + "], len = [" + len + "], response = [" + response.message() + "]" + " )");
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -842,7 +905,9 @@ public class AliyunDriveFSv2 extends FuseStubFS {
     @Override
     public int utimens(String path, Timespec[] timespec) {
         System.out.println("AliyunDriveFSv2.utimens( " + "path = [" + path + "], timespec = [" + timespec + "]" + " )");
-
+        rootFile.find(path).self.setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.ofEpochSecond(timespec[0].tv_sec.get(),
+                timespec[0].tv_nsec.intValue(), ZoneOffset.UTC
+        )));
         return 0;
     }
 /*
@@ -862,31 +927,44 @@ public class AliyunDriveFSv2 extends FuseStubFS {
 */
 
     @Override
-    public int write(String path, Pointer buf, @size_t long size, @off_t long offset, FuseFileInfo fi) {
+    public synchronized int write(String path, Pointer buf, @size_t long size, @off_t long offset, FuseFileInfo fi) {
         try {
-//            System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " )");
 
             GetFileByPathResponse p = getPath(path, null);
 
+
             if (p == null) {
-                return -ErrorCodes.ENOENT();
+                if (getPath(path, S_AVAILABLE) != null) {
+                    truncate(path, offset);
+                    p = getPath(path, null);
+                    System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " ) TRUNCATE");
+
+                } else {
+//                    System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " ) ENOENT");
+
+                    return -ErrorCodes.ENOENT();
+                }
             }
-            if (!(p.getType().equalsIgnoreCase("file"))) {
+            if (!(p.getType().equalsIgnoreCase(T_FILE))) {
                 return -ErrorCodes.EISDIR();
             }
+//            System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " )");
 
-            if (getLastComponent(path).startsWith("._") || getLastComponent(path).startsWith(".fuse_hidden")) {
+            String lastComponent = getLastComponent(path);
+            if (isExclude(lastComponent)) {
                 byte[] data = new byte[(int) size];
                 buf.get(0, data, 0, (int) size);
-                frist4kCache.put(p.getFileId(), data);
+                frist4kCache.put(path, data);
                 p.setSize((long) data.length);
                 return (int) size;
             }
 
+            GetFileByPathResponse finalFile = p;
+
             FixBuffer buff = writeCache.getOrDefault(fi.fh.get(), new FixBuffer(uploadPartSize) {
                 @Override
                 public void flush(byte[] data, int flushNum) {
-                    upload(p.getFileId(), p.getUploadId(), flushNum, data, data.length);
+                    upload(finalFile.getFileId(), finalFile.getUploadId(), flushNum, data, data.length);
                 }
             });
             writeCache.put(fi.fh.get(), buff);
@@ -896,32 +974,17 @@ public class AliyunDriveFSv2 extends FuseStubFS {
 
             if (p.getSize() < (offset + size)) {
                 p.setSize(offset + size);
+
             }
         } catch (Throwable t) {
             t.printStackTrace();
         }
 
-//        try (RandomAccessFile file = new RandomAccessFile(tempDir.resolve(p.fileId).toFile(), "rw")) {
-//            file.seek(offset);
-//            byte[] data = new byte[(int) size];
-//            buf.get(0, data, 0, data.length);
-//            file.write(data, 0, data.length);
-//            file.close();
-//            if (p.getSize() < (offset + size)) {
-//                p.setSize(offset + size);
-//            }
-//            p.setUpdatedAt(ISO_DATE_TIME.format(LocalDateTime.now()));
-//        } catch (FileNotFoundException e) {
-//            e.printStackTrace();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-
-        return (int) size;
+        return (int) (size);
     }
 
     public static void main(String[] args) throws Exception {
-        AliyunDriveFSv2 memfs = new AliyunDriveFSv2("455668a6afec40e18778e3d676cba0fa");
+        AliyunDriveFS aliyunDriveFSv3 = new AliyunDriveFS(UserDataUtil.getConfig("refreshToken", "2be8d698cb21419eb7b9b6b96decdc7b"));
 
         try {
             String path;
@@ -930,14 +993,14 @@ public class AliyunDriveFSv2 extends FuseStubFS {
                     path = "J:\\";
                     break;
                 default:
-                    path = "/tmp/mntm";
+                    path = "/Volumes/AliyunDrive";
             }
 
-            memfs.mount(Paths.get(path), true, false);
+            aliyunDriveFSv3.mount(Paths.get(path), true, false);
+
         } finally {
-            memfs.umount();
+            aliyunDriveFSv3.umount();
         }
     }
-
 
 }

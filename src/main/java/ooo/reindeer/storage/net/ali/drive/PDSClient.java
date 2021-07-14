@@ -62,6 +62,7 @@ public class PDSClient extends Client {
 
                 this.setExpireTime(accountTokenModel.getBody().getExpireTime());
                 this.setRefreshToken(accountTokenModel.getBody().getRefreshToken());
+                UserDataUtil.setConfig("refreshToken", this.getRefreshToken());
             } else {
                 throw new TeaException(response_.statusMessage, new Throwable());
             }
@@ -69,5 +70,6 @@ public class PDSClient extends Client {
             throw new TeaException(response_.statusMessage, e);
         }
     }
+
 
 }
