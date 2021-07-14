@@ -58,15 +58,14 @@ public class AliyunDriveFS extends FuseStubFS {
     private final DriveClient driveClient;
     Logger logger = LoggerFactory.getLogger(AliyunDriveFS.class);
     Config config = new Config();
-    Path tempDir = Files.createTempDirectory("AliyunDriverFS");
+
     int uploadPartSize = 5 * 1024 * 1024;
     int readPartSize = 5 * 1024 * 1024;
-    //    Map<String, CacheItem<GetFileByPathResponse>> cache = new ConcurrentHashMap<>();
     Map<String, byte[]> frist4kCache = new ConcurrentHashMap<>();
     Map<Object, FixBuffer> writeCache = new ConcurrentHashMap<>();
     Map<Object, FixBuffer> readCache = new ConcurrentHashMap<>();
     FileRef rootFile = new FileRef();
-    CacheItem<GetFileByPathResponse> DEFAULT_CACHE_ITEM = new CacheItem<GetFileByPathResponse>().setTimeout(-1);
+
     long lastUpdateStatFS = 0;
     long totalSize = 0;
     long freeSize = 0;
