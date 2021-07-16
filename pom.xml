@@ -13,13 +13,11 @@
             <artifactId>slf4j-api</artifactId>
             <version>1.7.30</version>
         </dependency>
-
         <dependency>
             <groupId>com.github.serceman</groupId>
             <artifactId>jnr-fuse</artifactId>
             <version>0.5.5</version>
         </dependency>
-
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
@@ -37,7 +35,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j</artifactId>
+            <artifactId>log4j-core</artifactId>
             <version>2.14.0</version>
         </dependency>
         <dependency>
@@ -57,6 +55,74 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>ooo.reindeer.storage.net.ali.drive.AliyunDriveFS</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>com.jolira</groupId>
+                <artifactId>onejar-maven-plugin</artifactId>
+                <version>1.4.4</version>
+                <executions>
+                    <execution>
+                        <configuration>
+                            <attachToBuild>true</attachToBuild>
+                            <classifier>onejar</classifier>
+                        </configuration>
+                        <goals>
+                            <goal>one-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>io.github.fvarrui</groupId>
+                <artifactId>javapackager</artifactId>
+                <version>1.2.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>package</goal>
+                        </goals>
+                        <configuration>
+                            <!-- mandatory -->
+                            <mainClass>ooo.reindeer.storage.net.ali.drive.AliyunDriveFS</mainClass>
+                            <!-- optional -->
+                            <bundleJre>false</bundleJre>
+                            <generateInstaller>false</generateInstaller>
+                            <administratorRequired>false</administratorRequired>
+                            <copyDependencies>true</copyDependencies>
+                            <platform>auto|linux|mac|windows</platform>
+                            <displayName>AliyunFus</displayName>
+
+                            <platform>mac</platform>
+<!--                            <additionalResources>-->
+<!--                                <additionalResource>file path</additionalResource>-->
+<!--                                <additionalResource>folder path</additionalResource>-->
+<!--                                <additionalResource>...</additionalResource>-->
+<!--                            </additionalResources>-->
+<!--                            <linuxConfig>...</linuxConfig>-->
+<!--                            <macConfig>...</macConfig>-->
+<!--                            <winConfig>...</winConfig>-->
+<!--                            [...]-->
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>

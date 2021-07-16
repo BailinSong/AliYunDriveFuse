@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.function.Supplier;
 
 /**
  * @ClassName UserDataUtil
@@ -50,6 +51,20 @@ public class UserDataUtil {
         String value = config.getProperty(name, defaultValue);
         if (Objects.equals(value, defaultValue)) {
             setConfig(name, defaultValue);
+        }
+        return value;
+    }
+
+    public static String getConfig(String name, Supplier<String> getter) {
+        String value = config.getProperty(name);
+        String defaultValue=null;
+        if(Objects.isNull(value)||value.isEmpty()){
+            defaultValue=getter.get();
+        }
+
+        if (defaultValue!=null && !defaultValue.isEmpty()&&!Objects.equals(value,defaultValue)) {
+            setConfig(name, defaultValue);
+            value=defaultValue;
         }
         return value;
     }

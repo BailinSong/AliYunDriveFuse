@@ -3,6 +3,7 @@ package ooo.reindeer.storage.net.ali.drive;
 
 import com.aliyun.pds.client.models.*;
 import com.aliyun.tea.TeaException;
+import com.aliyun.teautil.models.TeaUtilException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jnr.ffi.Platform;
 import jnr.ffi.Pointer;
@@ -11,8 +12,6 @@ import jnr.ffi.types.mode_t;
 import jnr.ffi.types.off_t;
 import jnr.ffi.types.size_t;
 import okhttp3.Response;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.serce.jnrfuse.ErrorCodes;
 import ru.serce.jnrfuse.FuseFillDir;
 import ru.serce.jnrfuse.FuseStubFS;
@@ -21,11 +20,10 @@ import ru.serce.jnrfuse.struct.FuseFileInfo;
 import ru.serce.jnrfuse.struct.Statvfs;
 import ru.serce.jnrfuse.struct.Timespec;
 
+import javax.swing.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -45,6 +43,19 @@ import static java.time.format.DateTimeFormatter.ISO_DATE_TIME;
 public class AliyunDriveFS extends FuseStubFS {
 
 
+    public static String getRefreshToken(){
+        return UserInput("Refresh Token", "配置");
+    }
+
+    public static String UserInput(String message, String title){
+        String value=null;
+        while((value= JOptionPane.showInputDialog(null,message,title,JOptionPane.PLAIN_MESSAGE))==null||value.isEmpty()) {
+            ;
+        }
+        return value;
+    }
+
+
     public static final String S_AVAILABLE = "available";
     public static final String S_UPLOADING = "uploading*";
     public static final String T_SYMLINK = "symlink";
@@ -52,11 +63,12 @@ public class AliyunDriveFS extends FuseStubFS {
     public static final String T_FOLDER = "folder";
     static List<String> exclude = Arrays.asList("._"
             , ".DS_Store"
-            , ".hidden");
+            , ".hidden"
+    ,"~$",".~WRL");
 
 
     private final DriveClient driveClient;
-    Logger logger = LoggerFactory.getLogger(AliyunDriveFS.class);
+//    Logger logger = LoggerFactory.getLogger(AliyunDriveFS.class);
     Config config = new Config();
 
     int uploadPartSize = 5 * 1024 * 1024;
@@ -83,7 +95,14 @@ public class AliyunDriveFS extends FuseStubFS {
         tokenRequest.setRefreshToken(config.refreshToken);
         tokenRequest.setGrantType("refresh_token");
         AccountTokenModel tokenResponse;
-        tokenResponse = driveClient.accountToken(tokenRequest);
+        try {
+            tokenResponse = driveClient.accountToken(tokenRequest);
+        }catch (TeaUtilException teaUtilException){
+            if (teaUtilException.getMessage().contains("refresh_token is not valid")) {
+                UserDataUtil.setConfig("refreshToken",AliyunDriveFS.getRefreshToken());
+            }
+            throw new RuntimeException(teaUtilException);
+        }
 
         GetUserRequest userRequest = new GetUserRequest();
         userRequest.setUserId(tokenResponse.getBody().getUserId());
@@ -248,9 +267,10 @@ public class AliyunDriveFS extends FuseStubFS {
 
     private GetFileByPathResponse getPath(String path, boolean remote, String... status) {
 
-        if (isExclude(path)) {
-            return null;
-        }
+//        //?
+//        if (isExclude(path)) {
+//            return null;
+//        }
 
         GetFileByPathResponse value;
         FileRef file = rootFile.find(path);
@@ -306,7 +326,7 @@ public class AliyunDriveFS extends FuseStubFS {
     }
 
     @Override
-    public int getattr(String path, FileStat stat) {
+    public synchronized int getattr(String path, FileStat stat) {
 
         try {
 
@@ -890,9 +910,10 @@ public class AliyunDriveFS extends FuseStubFS {
             part = driveClient.getUploadUrl(uploadUrlRequest).getBody().getPartInfoList().get(0);
             String uploadUrl = part.getUploadUrl();
 
-            Response response = driveClient.uploadFileParh(uploadUrl, bytesToWrite, 0, len);
+            try(Response response = driveClient.uploadFileParh(uploadUrl, bytesToWrite, 0, len)){
+                System.out.println("AliyunDriveFSv2.upload( " + "fileid = [" + fileid + "], uploadId = [" + uploadId + "], partNum = [" + partNum + "], bytesToWrite = [" + bytesToWrite + "], len = [" + len + "], response = [" + response.message() + "]" + " )");
 
-            System.out.println("AliyunDriveFSv2.upload( " + "fileid = [" + fileid + "], uploadId = [" + uploadId + "], partNum = [" + partNum + "], bytesToWrite = [" + bytesToWrite + "], len = [" + len + "], response = [" + response.message() + "]" + " )");
+            }
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -933,28 +954,36 @@ public class AliyunDriveFS extends FuseStubFS {
 
 
             if (p == null) {
-                if (getPath(path, S_AVAILABLE) != null) {
-                    truncate(path, offset);
-                    p = getPath(path, null);
-                    System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " ) TRUNCATE");
+                if ((p=getPath(path, S_AVAILABLE)) != null) {
 
+                    if(!isExclude(getLastComponent(path))) {
+                        truncate(path, offset);
+                        p = getPath(path, null);
+                        System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " ) TRUNCATE");
+                    }
                 } else {
 //                    System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " ) ENOENT");
 
                     return -ErrorCodes.ENOENT();
                 }
             }
+            System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " )");
             if (!(p.getType().equalsIgnoreCase(T_FILE))) {
                 return -ErrorCodes.EISDIR();
             }
-//            System.out.println("AliyunDriveFS.write[" + fi.fh.get() + "]( " + "path = [" + path + "], buf = [" + buf + "], size = [" + size + "], offset = [" + offset + "]" + " )");
+
 
             String lastComponent = getLastComponent(path);
             if (isExclude(lastComponent)) {
-                byte[] data = new byte[(int) size];
-                buf.get(0, data, 0, (int) size);
-                frist4kCache.put(path, data);
-                p.setSize((long) data.length);
+                byte[] sdata = frist4kCache.getOrDefault(path,new byte[(int) (offset+size)]);
+                if(offset+size>sdata.length){
+                    byte[] ddata=new byte[(int) (offset+size)];
+                    System.arraycopy(sdata,0,ddata,0,sdata.length);
+                    sdata=ddata;
+                }
+                buf.get(0, sdata, (int) offset, (int) size);
+                frist4kCache.put(path, sdata);
+                p.setSize((long) sdata.length);
                 return (int) size;
             }
 
@@ -983,7 +1012,19 @@ public class AliyunDriveFS extends FuseStubFS {
     }
 
     public static void main(String[] args) throws Exception {
-        AliyunDriveFS aliyunDriveFSv3 = new AliyunDriveFS(UserDataUtil.getConfig("refreshToken", "2be8d698cb21419eb7b9b6b96decdc7b"));
+//        Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE);
+
+
+
+        AliyunDriveFS aliyunDriveFSv3 =null;
+
+        do {
+            try {
+                aliyunDriveFSv3 = new AliyunDriveFS(UserDataUtil.getConfig("refreshToken", AliyunDriveFS::getRefreshToken));
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+        }while(aliyunDriveFSv3 == null);
 
         try {
             String path;
@@ -1001,5 +1042,7 @@ public class AliyunDriveFS extends FuseStubFS {
             aliyunDriveFSv3.umount();
         }
     }
+
+
 
 }
