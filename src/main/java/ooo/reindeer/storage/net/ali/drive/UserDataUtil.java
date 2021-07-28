@@ -26,7 +26,7 @@ public class UserDataUtil {
         try {
             switch (Platform.getNativePlatform().getOS()) {
                 case WINDOWS:
-                    userDateDir = Paths.get("/Users/" + System.getenv("USER") + "/Library/Application Support/" + AliyunDriveFS.class.getName());
+                    userDateDir = Paths.get(System.getenv("user.home") + "/AppData/Roaming/" + AliyunDriveFS.class.getName());
                     break;
                 default:
                     userDateDir = Paths.get("/Users/" + System.getenv("USER") + "/Library/Application Support/" + AliyunDriveFS.class.getName());

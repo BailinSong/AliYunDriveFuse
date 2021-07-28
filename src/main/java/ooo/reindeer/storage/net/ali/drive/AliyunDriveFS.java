@@ -706,8 +706,10 @@ public class AliyunDriveFS extends FuseStubFS {
     @Override
     public int statfs(String path, Statvfs stbuf) {
 
+//       System.out.println("AliyunDriveFS.statfs( "+"path = [" + path + "] )");
 
-        if ("/".equals(path)) {
+//        if ("/".equals(path) || path.endsWith(":/")) {
+
             try {
 
                 if (lastUpdateStatFS < System.currentTimeMillis() - 30000) {
@@ -737,7 +739,7 @@ public class AliyunDriveFS extends FuseStubFS {
             }
 
 
-        }
+//        }
         return super.statfs(path, stbuf);
     }
 

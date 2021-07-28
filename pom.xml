@@ -18,6 +18,7 @@
             <artifactId>jnr-fuse</artifactId>
             <version>0.5.5</version>
         </dependency>
+
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
@@ -57,34 +58,34 @@
     </dependencies>
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>ooo.reindeer.storage.net.ali.drive.AliyunDriveFS</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
-            </plugin>
+<!--            <plugin>-->
+<!--                <groupId>org.apache.maven.plugins</groupId>-->
+<!--                <artifactId>maven-jar-plugin</artifactId>-->
+<!--                <configuration>-->
+<!--                    <archive>-->
+<!--                        <manifest>-->
+<!--                            <mainClass>ooo.reindeer.storage.net.ali.drive.AliyunDriveFS</mainClass>-->
+<!--                        </manifest>-->
+<!--                    </archive>-->
+<!--                </configuration>-->
+<!--            </plugin>-->
 
-            <plugin>
-                <groupId>com.jolira</groupId>
-                <artifactId>onejar-maven-plugin</artifactId>
-                <version>1.4.4</version>
-                <executions>
-                    <execution>
-                        <configuration>
-                            <attachToBuild>true</attachToBuild>
-                            <classifier>onejar</classifier>
-                        </configuration>
-                        <goals>
-                            <goal>one-jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
+<!--            <plugin>-->
+<!--                <groupId>com.jolira</groupId>-->
+<!--                <artifactId>onejar-maven-plugin</artifactId>-->
+<!--                <version>1.4.4</version>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <configuration>-->
+<!--                            <attachToBuild>true</attachToBuild>-->
+<!--                            <classifier>onejar</classifier>-->
+<!--                        </configuration>-->
+<!--                        <goals>-->
+<!--                            <goal>one-jar</goal>-->
+<!--                        </goals>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--            </plugin>-->
             <plugin>
                 <groupId>io.github.fvarrui</groupId>
                 <artifactId>javapackager</artifactId>
@@ -104,14 +105,16 @@
                             <administratorRequired>false</administratorRequired>
                             <copyDependencies>true</copyDependencies>
                             <platform>auto|linux|mac|windows</platform>
-                            <displayName>AliyunFus</displayName>
+                            <displayName>AliyunFuse</displayName>
+                            <name>AliyunFuse</name>
+                            <iconFile>AliyunFuse.icns</iconFile>
 
                             <platform>mac</platform>
-<!--                            <additionalResources>-->
-<!--                                <additionalResource>file path</additionalResource>-->
+                            <additionalResources>
+                                <additionalResource>AliyunFuse.icns</additionalResource>
 <!--                                <additionalResource>folder path</additionalResource>-->
 <!--                                <additionalResource>...</additionalResource>-->
-<!--                            </additionalResources>-->
+                            </additionalResources>
 <!--                            <linuxConfig>...</linuxConfig>-->
 <!--                            <macConfig>...</macConfig>-->
 <!--                            <winConfig>...</winConfig>-->
