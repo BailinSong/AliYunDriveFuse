@@ -28,6 +28,10 @@ public class UserDataUtil {
                 case WINDOWS:
                     userDateDir = Paths.get(System.getenv("user.home") + "/AppData/Roaming/" + AliyunDriveFS.class.getName());
                     break;
+                case LINUX:
+                    userDateDir = Paths.get("/etc/aliyunfuse");
+                    System.out.println("config on:\t" + userDateDir);
+                    break;
                 default:
                     userDateDir = Paths.get("/Users/" + System.getenv("USER") + "/Library/Application Support/" + AliyunDriveFS.class.getName());
             }
@@ -57,14 +61,14 @@ public class UserDataUtil {
 
     public static String getConfig(String name, Supplier<String> getter) {
         String value = config.getProperty(name);
-        String defaultValue=null;
-        if(Objects.isNull(value)||value.isEmpty()){
-            defaultValue=getter.get();
+        String defaultValue = null;
+        if (Objects.isNull(value) || value.isEmpty()) {
+            defaultValue = getter.get();
         }
 
-        if (defaultValue!=null && !defaultValue.isEmpty()&&!Objects.equals(value,defaultValue)) {
+        if (defaultValue != null && !defaultValue.isEmpty() && !Objects.equals(value, defaultValue)) {
             setConfig(name, defaultValue);
-            value=defaultValue;
+            value = defaultValue;
         }
         return value;
     }

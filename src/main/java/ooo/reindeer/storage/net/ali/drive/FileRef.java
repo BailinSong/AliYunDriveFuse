@@ -16,7 +16,14 @@ public class FileRef {
     GetFileByPathResponse self;
     Map<String, FileRef> children = new ConcurrentHashMap<>(0);
 
-    public FileRef find(String path) {
+    public FileRef find(String rpath) {
+
+        String path;
+        if (!(rpath.indexOf('\0') < 0)) {
+            path = rpath.substring(0, rpath.indexOf('\0'));
+        } else {
+            path = rpath;
+        }
 
         if (path == null || path.isEmpty() || path.equals("/")) {
             return this;

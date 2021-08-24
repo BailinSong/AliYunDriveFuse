@@ -17,7 +17,7 @@ public class DriveTest {
             Config config = new Config();
 
             config.protocol = "https";
-            config.refreshToken = "7e0e98aea20a4339b9c2d018efc2475a";
+            config.refreshToken = "d8921e5576ab4a0d8a6b306ed55d77eb";
 
             DriveClient client = new DriveClient(config);
             AccountTokenRequest tokenRequest = new AccountTokenRequest();
@@ -36,20 +36,19 @@ public class DriveTest {
             System.out.println(objectMapper.writeValueAsString(getUserModel));
 
 
-            ListFileRequest listFileRequest=new ListFileRequest();
+            ListFileRequest listFileRequest = new ListFileRequest();
             listFileRequest.setDriveId(tokenResponse.body.getDefaultDriveId());
             listFileRequest.setMarker("");
             listFileRequest.setParentFileId("root");
 
-            ListFileModel listFileResponse=client.listFile(listFileRequest);
+            ListFileModel listFileResponse = client.listFile(listFileRequest);
             System.out.println(objectMapper.writeValueAsString(listFileResponse));
 
 
-
-            GetDriveRequest getDriveRequest=new GetDriveRequest();
+            GetDriveRequest getDriveRequest = new GetDriveRequest();
             getDriveRequest.setDriveId(tokenResponse.body.getDefaultDriveId());
 
-            GetDriveModel getDriveModel=client.getDrive(getDriveRequest);
+            GetDriveModel getDriveModel = client.getDrive(getDriveRequest);
             System.out.println(objectMapper.writeValueAsString(getDriveModel));
 
         } catch (TeaException e) {

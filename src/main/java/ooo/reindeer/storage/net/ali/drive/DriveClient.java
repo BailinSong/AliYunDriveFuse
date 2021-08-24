@@ -4,14 +4,17 @@ import com.aliyun.pds.client.Client;
 import com.aliyun.pds.client.models.*;
 import com.aliyun.tea.*;
 import com.aliyun.tea.okhttp.ClientHelper;
+import com.aliyun.tea.okhttp.OkRequestBuilder;
 import com.aliyun.teautil.Common;
 import okhttp3.*;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
@@ -25,7 +28,33 @@ import java.util.Map;
 public class DriveClient extends Client {
 
 
+    public static DriveClient client;
     String driveId;
+
+    static RuntimeOptions runtime = new RuntimeOptions();
+
+
+    java.util.Map<String, Object> updataRuntime = TeaConverter.buildMap(
+            new TeaPair("timeouted", "retry"),
+            new TeaPair("readTimeout", runtime.readTimeout),
+            new TeaPair("connectTimeout", runtime.connectTimeout),
+            new TeaPair("localAddr", runtime.localAddr),
+            new TeaPair("httpProxy", runtime.httpProxy),
+            new TeaPair("httpsProxy", runtime.httpsProxy),
+            new TeaPair("noProxy", runtime.noProxy),
+            new TeaPair("maxIdleConns", runtime.maxIdleConns),
+            new TeaPair("socks5Proxy", runtime.socks5Proxy),
+            new TeaPair("socks5NetWork", runtime.socks5NetWork),
+            new TeaPair("retry", TeaConverter.buildMap(
+                    new TeaPair("retryable", runtime.autoretry),
+                    new TeaPair("maxAttempts", com.aliyun.teautil.Common.defaultNumber(runtime.maxAttempts, 3))
+            )),
+            new TeaPair("backoff", TeaConverter.buildMap(
+                    new TeaPair("policy", com.aliyun.teautil.Common.defaultString(runtime.backoffPolicy, "no")),
+                    new TeaPair("period", com.aliyun.teautil.Common.defaultNumber(runtime.backoffPeriod, 1))
+            )),
+            new TeaPair("ignoreSSL", runtime.ignoreSSL)
+    );
 
     public DriveClient(Config config) throws Exception {
         super(config);
@@ -33,6 +62,7 @@ public class DriveClient extends Client {
             com.aliyun.pdscredentials.models.Config accessConfig = com.aliyun.pdscredentials.models.Config.build(TeaConverter.buildMap(new TeaPair("accessToken", config.accessToken), new TeaPair("endpoint", config.endpoint), new TeaPair("domainId", config.domainId), new TeaPair("clientId", config.clientId), new TeaPair("refreshToken", config.refreshToken), new TeaPair("clientSecret", config.clientSecret), new TeaPair("expireTime", config.expireTime)));
             this._accessTokenCredential = new PDSClient(accessConfig);
         }
+        client = this;
     }
 
     private static String composeUrl(TeaRequest request) {
@@ -76,6 +106,10 @@ public class DriveClient extends Client {
         }
 
         return urlBuilder.toString();
+    }
+
+    public static DriveClient get() {
+        return client;
     }
 
     @Override
@@ -170,43 +204,61 @@ public class DriveClient extends Client {
                 String accessToken = this.getAccessToken();
                 HttpURLConnection httpConnection = (HttpURLConnection) new URL("https://api.aliyundrive.com/v2/file/download?drive_id=" + driveId + "&file_id=" + fileId).openConnection();
 
+
+                URL url=new URL("https://api.aliyundrive.com/v2/file/download?drive_id=" + driveId + "&file_id=" + fileId);
+
+                OkHttpClient okHttpClient = ClientHelper.getOkHttpClient(url.getHost(), url.getPort(), runtime_);
+                Request.Builder requestBuilder = new Request.Builder();
+
+                Map<String,String> headers=new HashMap<>();
+                headers.put("User-Agent", this.getUserAgent());
+                headers.put("authorization", "Bearer " + accessToken + "");
+                headers.put("Referer", "https://www.aliyundrive.com/");
+                headers.put("RANGE", "bytes=" + offset + "-" + (((offset + length) >= size) ? "" : (offset + length)));
+                headers.put("Connection", "keep-alive");
+
+                OkRequestBuilder okRequestBuilder = (new OkRequestBuilder(requestBuilder)).url(url).header(headers);
+
+                Response response = okHttpClient.newCall(okRequestBuilder.buildRequest(TeaRequest.create())).execute();
+                return response.body().bytes();
+
                /* authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhN2U4OGYyMzBkOWU0OWM5YmU2YTI2MWU4OGEyZTFkZiIsImN1c3RvbUpzb24iOiJ7XCJjbGllbnRJZFwiOlwiMjVkelgzdmJZcWt0Vnh5WFwiLFwiZG9tYWluSWRcIjpcImJqMjlcIixcInNjb3BlXCI6W1wiRFJJVkUuQUxMXCIsXCJTSEFSRS5BTExcIixcIkZJTEUuQUxMXCIsXCJVU0VSLkFMTFwiLFwiU1RPUkFHRS5BTExcIixcIlNUT1JBR0VGSUxFLkxJU1RcIixcIkJBVENIXCIsXCJPQVVUSC5BTExcIixcIklNQUdFLkFMTFwiLFwiSU5WSVRFLkFMTFwiLFwiQUNDT1VOVC5BTExcIl0sXCJyb2xlXCI6XCJ1c2VyXCIsXCJyZWZcIjpcImh0dHBzOi8vd3d3LmFsaXl1bmRyaXZlLmNvbS9cIn0iLCJleHAiOjE2MjQ5NDI1ODgsImlhdCI6MTYyNDkzNTMyOH0.nQ7awl3bnqKZrlIzPcXTlFhUedupHZsuw46yw49wdS2AJIpXwGaDTEFTJYYqMYMaxaXlwFkLbjr8QqvifVHuUddmvhYEw5YjQD6UunT2K6GxRFjhutQu_ZKWe0ctaFe_J0gFtNTxJrqxapXL_Ggs2RqjUNPSmBYu_-ZCyA1RrQQ
                 user-agent: AlibabaCloud (Mac OS X; x86_64) Java/1.8.0_211-b12 tea-util/0.2.6 TeaDSL/1
                 Referer:https://www.aliyundrive.com/
                 RANGE: bytes=0-65536
                         */
-                httpConnection.setRequestProperty("User-Agent", this.getUserAgent());
-                httpConnection.setReadTimeout(60000);
-//xxx表示你已下载的文件大小
-                httpConnection.setRequestProperty("authorization", "Bearer " + accessToken + "");
-                httpConnection.setRequestProperty("Referer", "https://www.aliyundrive.com/");
-                httpConnection.setRequestProperty("RANGE", "bytes=" + offset + "-" + (((offset + length) >= size) ? "" : (offset + length)));
-//                System.out.println(httpConnection+" RANGE:bytes=" + offset + "-"+(((offset+length)==size)?"":(offset+length)));
-                byte[] buff = new byte[length];
+//                httpConnection.setRequestProperty("User-Agent", this.getUserAgent());
+//                httpConnection.setReadTimeout(60000);
+////xxx表示你已下载的文件大小
+//                httpConnection.setRequestProperty("authorization", "Bearer " + accessToken + "");
+//                httpConnection.setRequestProperty("Referer", "https://www.aliyundrive.com/");
+//                httpConnection.setRequestProperty("RANGE", "bytes=" + offset + "-" + (((offset + length) >= size) ? "" : (offset + length)));
+////                System.out.println(httpConnection+" RANGE:bytes=" + offset + "-"+(((offset+length)==size)?"":(offset+length)));
+//                byte[] buff = new byte[length];
+//
+//
+//                if (httpConnection.getResponseCode() == 206 || httpConnection.getResponseCode() == 200) {
+//                    int buffOffset = 0;
+//                    int readLength = -1;
+//                    int realSize = httpConnection.getContentLength();
+//                    try (InputStream input = httpConnection.getInputStream()) {
+//                        do {
+//
+//                            readLength = input.read(buff, buffOffset, length - buffOffset);
+////                            System.out.println("buffOffset = " + buffOffset+" readLength="+readLength);
+//                            buffOffset += readLength;
+//
+//                        } while (readLength != -1 && (buffOffset != length && readLength != 0));
+//                    }
+//
+//
+////                    System.out.println("DriveClient.download( "+"driveId = [" + driveId + "], fileId = [" + fileId + "], size = [" + size + "], offset = [" + offset + "], length = [" + length + "]"+" )"+new String(buff));
+//                    System.out.println("DriveClient.download( " + "driveId = [" + driveId + "], fileId = [" + fileId + "], size = [" + size + "], offset = [" + offset + "], length = [" + length + "]" + " ) FIN");
+//
+//                    return buff;
+//                }
 
-
-                if (httpConnection.getResponseCode() == 206 || httpConnection.getResponseCode() == 200) {
-                    int buffOffset = 0;
-                    int readLength = -1;
-                    int realSize = httpConnection.getContentLength();
-                    try (InputStream input = httpConnection.getInputStream()) {
-                        do {
-
-                            readLength = input.read(buff, buffOffset, length - buffOffset);
-//                            System.out.println("buffOffset = " + buffOffset+" readLength="+readLength);
-                            buffOffset += readLength;
-
-                        } while (readLength != -1 && (buffOffset != length && readLength != 0));
-                    }
-
-
-//                    System.out.println("DriveClient.download( "+"driveId = [" + driveId + "], fileId = [" + fileId + "], size = [" + size + "], offset = [" + offset + "], length = [" + length + "]"+" )"+new String(buff));
-                    System.out.println("DriveClient.download( " + "driveId = [" + driveId + "], fileId = [" + fileId + "], size = [" + size + "], offset = [" + offset + "], length = [" + length + "]" + " ) FIN");
-
-                    return buff;
-                }
-
-                throw new TeaException(TeaConverter.merge(Object.class, TeaConverter.buildMap(new TeaPair("data", TeaConverter.buildMap(new TeaPair("statusCode", httpConnection.getResponseCode()), new TeaPair("statusMessage", httpConnection.getResponseMessage()))))));
+//                throw new TeaException(TeaConverter.merge(Object.class, TeaConverter.buildMap(new TeaPair("data", TeaConverter.buildMap(new TeaPair("statusCode", httpConnection.getResponseCode()), new TeaPair("statusMessage", httpConnection.getResponseMessage()))))));
             } catch (Exception var18) {
                 if (!Tea.isRetryable(var18)) {
                     throw var18;
@@ -309,31 +361,12 @@ public class DriveClient extends Client {
         throw new TeaUnretryableException(_lastRequest, _lastException);
     }
 
-    public Response uploadFileParh(String uploadUrl, final byte[] content, int offset, int len) throws Exception {
+
+    public Response uploadFilePart(String uploadUrl, final byte[] content, int offset, int len) throws Exception {
         URL url = new URL(uploadUrl);
-        RuntimeOptions runtime = new RuntimeOptions();
-        java.util.Map<String, Object> runtime_ = TeaConverter.buildMap(
-                new TeaPair("timeouted", "retry"),
-                new TeaPair("readTimeout", runtime.readTimeout),
-                new TeaPair("connectTimeout", runtime.connectTimeout),
-                new TeaPair("localAddr", runtime.localAddr),
-                new TeaPair("httpProxy", runtime.httpProxy),
-                new TeaPair("httpsProxy", runtime.httpsProxy),
-                new TeaPair("noProxy", runtime.noProxy),
-                new TeaPair("maxIdleConns", runtime.maxIdleConns),
-                new TeaPair("socks5Proxy", runtime.socks5Proxy),
-                new TeaPair("socks5NetWork", runtime.socks5NetWork),
-                new TeaPair("retry", TeaConverter.buildMap(
-                        new TeaPair("retryable", runtime.autoretry),
-                        new TeaPair("maxAttempts", com.aliyun.teautil.Common.defaultNumber(runtime.maxAttempts, 3))
-                )),
-                new TeaPair("backoff", TeaConverter.buildMap(
-                        new TeaPair("policy", com.aliyun.teautil.Common.defaultString(runtime.backoffPolicy, "no")),
-                        new TeaPair("period", com.aliyun.teautil.Common.defaultNumber(runtime.backoffPeriod, 1))
-                )),
-                new TeaPair("ignoreSSL", runtime.ignoreSSL)
-        );
-        OkHttpClient okHttpClient = ClientHelper.getOkHttpClient(url.getHost(), url.getPort(), runtime_);
+
+
+        OkHttpClient okHttpClient = ClientHelper.getOkHttpClient(url.getHost(), url.getPort(), updataRuntime);
 
         Request.Builder requestBuilder = new Request.Builder();
         RequestBody body = RequestBody.create(MediaType.parse(""), content, offset, len);
@@ -342,5 +375,30 @@ public class DriveClient extends Client {
         Request request = requestBuilder.build();
 
         return okHttpClient.newCall(request).execute();
+    }
+
+    public void upload(String fileid, String uploadId, int partNum, byte[] bytesToWrite, int len) {
+
+        try {
+            GetUploadUrlRequest uploadUrlRequest = new GetUploadUrlRequest();
+            uploadUrlRequest.setFileId(fileid);
+            uploadUrlRequest.setDriveId(driveId);
+            uploadUrlRequest.setUploadId(uploadId);
+            UploadPartInfo part = new UploadPartInfo()
+                    .setPartNumber((long) partNum);
+            uploadUrlRequest.setPartInfoList(Collections.singletonList(part));
+            part = getUploadUrl(uploadUrlRequest).getBody().getPartInfoList().get(0);
+            String uploadUrl = part.getUploadUrl();
+
+            try (Response response = uploadFilePart(uploadUrl, bytesToWrite, 0, len)) {
+                System.out.println("AliyunDriveFSv2.upload( " + "fileid = [" + fileid + "], uploadId = [" + uploadId + "], partNum = [" + partNum + "], bytesToWrite = [" + bytesToWrite + "], len = [" + len + "], response = [" + response.message() + "]" + " )");
+
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
